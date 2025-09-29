@@ -1,0 +1,46 @@
+services:
+  postgres:
+    image: 'postgres:15'
+    container_name: vivemedellin-postgres
+    environment:
+      - 'POSTGRES_DB=mydatabase'
+      - 'POSTGRES_PASSWORD=secret'
+      - 'POSTGRES_USER=myuser'
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db:/docker-entrypoint-initdb.d
+    networks:
+      - vivemedellin-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U myuser -d mydatabase"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  vivemedellin-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vivemedellin-app
+    ports:
+      - '8080:8080'
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/mydatabase
+      - SPRING_DATASOURCE_USERNAME=myuser
+      - SPRING_DATASOURCE_PASSWORD=secret
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - vivemedellin-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  vivemedellin-network:
+    driver: bridge
