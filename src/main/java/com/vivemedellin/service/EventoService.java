@@ -1,22 +1,37 @@
 package com.vivemedellin.service;
 
-import com.vivemedellin.dto.*;
-import com.vivemedellin.model.*;
-import com.vivemedellin.repository.EventoRepository;
-import com.vivemedellin.repository.FuncionRepository;
-import com.vivemedellin.repository.UsuarioRepository;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
+
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.vivemedellin.dto.ActualizarEventoRequest;
+import com.vivemedellin.dto.CrearEventoRequest;
+import com.vivemedellin.dto.EventoFiltrosDTO;
+import com.vivemedellin.dto.EventoResponse;
+import com.vivemedellin.dto.FuncionDTO;
+import com.vivemedellin.dto.OrganizadorDTO;
+import com.vivemedellin.dto.UbicacionDTO;
+import com.vivemedellin.model.Evento;
+import com.vivemedellin.model.Funcion;
+import com.vivemedellin.model.Organizador;
+import com.vivemedellin.model.Ubicacion;
+import com.vivemedellin.repository.EventoRepository;
+import com.vivemedellin.repository.FuncionRepository;
+import com.vivemedellin.repository.UsuarioRepository;
+import com.vivemedellin.specification.EventoSpecification;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 @Service
 @RequiredArgsConstructor
@@ -263,6 +278,183 @@ public class EventoService {
             .filter(evento -> evento.getStatus() == Evento.EstadoEvento.PUBLISHED)
             .map(this::convertirAEventoResponse)
             .collect(Collectors.toList());
+    }
+    
+    /**
+     * Búsqueda avanzada con filtros usando Specifications
+     * Soporta filtrado por: texto, ubicación, categoría, fechas, destacado, gratuito, modalidad
+     */
+    @Transactional(readOnly = true)
+    public Page<EventoResponse> busquedaAvanzada(EventoFiltrosDTO filtros) {
+        log.info("Búsqueda avanzada con filtros: {}", filtros);
+        
+        // Validar que las fechas sean coherentes
+        if (!filtros.fechasValidas()) {
+            throw new IllegalArgumentException("La fecha inicial no puede ser posterior a la fecha final");
+        }
+        
+        // Construir Specification combinada
+        Specification<Evento> spec = EventoSpecification.busquedaAvanzada(
+            filtros.getTexto(),
+            filtros.getUbicacion(),
+            filtros.getCategoria(),
+            filtros.getFechaDesde(),
+            filtros.getFechaHasta(),
+            filtros.getDestacado(),
+            filtros.getGratuito(),
+            filtros.getModalidad(),
+            filtros.getSoloActivos() != null ? filtros.getSoloActivos() : true
+        );
+        
+        // Agregar filtro de organizador si se especificó
+        if (filtros.getOrganizador() != null && !filtros.getOrganizador().trim().isEmpty()) {
+            spec = spec.and(EventoSpecification.conOrganizador(filtros.getOrganizador()));
+        }
+        
+        // Construir Pageable con ordenamiento
+        Sort sort = crearOrdenamiento(filtros.getOrdenarPorOrDefault(), filtros.getDireccionOrDefault());
+        Pageable pageable = PageRequest.of(
+            filtros.getPageOrDefault(), 
+            filtros.getSizeOrDefault(), 
+            sort
+        );
+        
+        // Ejecutar búsqueda
+        Page<Evento> eventos = eventoRepository.findAll(spec, pageable);
+        
+        log.info("Búsqueda avanzada encontró {} eventos de {} totales", 
+            eventos.getNumberOfElements(), eventos.getTotalElements());
+        
+        return eventos.map(this::convertirAEventoResponse);
+    }
+    
+    /**
+     * Búsqueda simple por palabras clave
+     * Busca en título, descripción, categoría, organizador y ubicación
+     */
+    @Transactional(readOnly = true)
+    public Page<EventoResponse> buscarPorPalabrasClaves(String keywords, Pageable pageable) {
+        log.info("Búsqueda por palabras clave: {}", keywords);
+        
+        if (keywords == null || keywords.trim().isEmpty()) {
+            throw new IllegalArgumentException("Las palabras clave no pueden estar vacías");
+        }
+        
+        Specification<Evento> spec = EventoSpecification.busquedaPorPalabrasClaves(keywords)
+                .and(EventoSpecification.soloActivos());
+        
+        Page<Evento> eventos = eventoRepository.findAll(spec, pageable);
+        
+        log.info("Búsqueda por palabras clave encontró {} eventos", eventos.getTotalElements());
+        
+        return eventos.map(this::convertirAEventoResponse);
+    }
+    
+    /**
+     * Buscar eventos próximos (fecha >= hoy)
+     */
+    @Transactional(readOnly = true)
+    public List<EventoResponse> buscarEventosProximos(Pageable pageable) {
+        log.info("Buscando eventos próximos");
+        
+        Specification<Evento> spec = EventoSpecification.proximosEventos()
+                .and(EventoSpecification.soloActivos());
+        
+        Page<Evento> eventos = eventoRepository.findAll(spec, pageable);
+        
+        return eventos.stream()
+                .map(this::convertirAEventoResponse)
+                .collect(Collectors.toList());
+    }
+    
+    /**
+     * Buscar eventos por ubicación (comuna/barrio)
+     */
+    @Transactional(readOnly = true)
+    public List<EventoResponse> buscarPorUbicacion(String ubicacion) {
+        log.info("Buscando eventos por ubicación: {}", ubicacion);
+        
+        if (ubicacion == null || ubicacion.trim().isEmpty()) {
+            throw new IllegalArgumentException("La ubicación no puede estar vacía");
+        }
+        
+        Specification<Evento> spec = EventoSpecification.conUbicacion(ubicacion)
+                .and(EventoSpecification.soloActivos())
+                .and(EventoSpecification.proximosEventos());
+        
+        List<Evento> eventos = eventoRepository.findAll(spec, Sort.by(Sort.Direction.ASC, "fecha"));
+        
+        return eventos.stream()
+                .map(this::convertirAEventoResponse)
+                .collect(Collectors.toList());
+    }
+    
+    /**
+     * Buscar eventos por fecha específica
+     */
+    @Transactional(readOnly = true)
+    public List<EventoResponse> buscarPorFecha(LocalDate fecha) {
+        log.info("Buscando eventos para la fecha: {}", fecha);
+        
+        if (fecha == null) {
+            throw new IllegalArgumentException("La fecha no puede ser nula");
+        }
+        
+        Specification<Evento> spec = EventoSpecification.entreRangoFechas(fecha, fecha)
+                .and(EventoSpecification.soloActivos());
+        
+        List<Evento> eventos = eventoRepository.findAll(spec, Sort.by(Sort.Direction.ASC, "horario"));
+        
+        return eventos.stream()
+                .map(this::convertirAEventoResponse)
+                .collect(Collectors.toList());
+    }
+    
+    /**
+     * Buscar eventos por rango de fechas
+     */
+    @Transactional(readOnly = true)
+    public List<EventoResponse> buscarPorRangoFechas(LocalDate fechaDesde, LocalDate fechaHasta) {
+        log.info("Buscando eventos entre {} y {}", fechaDesde, fechaHasta);
+        
+        if (fechaDesde != null && fechaHasta != null && fechaDesde.isAfter(fechaHasta)) {
+            throw new IllegalArgumentException("La fecha inicial no puede ser posterior a la fecha final");
+        }
+        
+        Specification<Evento> spec = EventoSpecification.entreRangoFechas(fechaDesde, fechaHasta)
+                .and(EventoSpecification.soloActivos());
+        
+        List<Evento> eventos = eventoRepository.findAll(spec, Sort.by(Sort.Direction.ASC, "fecha"));
+        
+        return eventos.stream()
+                .map(this::convertirAEventoResponse)
+                .collect(Collectors.toList());
+    }
+    
+    /**
+     * Buscar eventos gratuitos
+     */
+    @Transactional(readOnly = true)
+    public List<EventoResponse> buscarEventosGratuitos(Pageable pageable) {
+        log.info("Buscando eventos gratuitos");
+        
+        Specification<Evento> spec = EventoSpecification.esGratuito(true)
+                .and(EventoSpecification.soloActivos())
+                .and(EventoSpecification.proximosEventos());
+        
+        Page<Evento> eventos = eventoRepository.findAll(spec, pageable);
+        
+        return eventos.stream()
+                .map(this::convertirAEventoResponse)
+                .collect(Collectors.toList());
+    }
+    
+    // Método auxiliar para crear ordenamiento
+    private Sort crearOrdenamiento(String campo, String direccion) {
+        Sort.Direction dir = "DESC".equalsIgnoreCase(direccion) ? 
+            Sort.Direction.DESC : Sort.Direction.ASC;
+        
+        return Sort.by(dir, campo);
     }
     
     // Métodos privados de apoyo

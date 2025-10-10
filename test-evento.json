@@ -1,0 +1,23 @@
+{
+  "titulo": "Festival Rock Medellin 2025",
+  "descripcion": "Festival de rock con las mejores bandas nacionales e internacionales en el corazón de Medellín",
+  "fecha": "2025-07-15",
+  "horario": "19:00",
+  "categoria": "Culturales y Artísticos",
+  "modalidad": "PRESENCIAL",
+  "aforo": 45000,
+  "valorIngreso": "180000",
+  "destacado": false,
+  "ubicacion": {
+    "direccionCompleta": "Estadio Atanasio Girardot, Carrera 70 #32-30",
+    "comunaBarrio": "Laureles-Estadio",
+    "direccionDetallada": "Estadio Atanasio Girardot, entrada sur, zona VIP",
+    "enlaceMapa": "https://maps.google.com/?q=Estadio+Atanasio+Girardot"
+  },
+  "organizador": {
+    "nombre": "Rock Productions Colombia",
+    "celular": "3001234567",
+    "identificacion": "901234567",
+    "email": "info@rockproductions.co"
+  }
+}

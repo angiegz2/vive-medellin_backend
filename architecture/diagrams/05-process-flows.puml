@@ -1,0 +1,41 @@
+@startuml ViveMedellin_Process_Flows
+!theme plain
+
+title Flujos de Procesos Principales - ViveMedellin
+
+' Crear Evento Flow
+skinparam activity {
+    StartColor #90EE90
+    EndColor #FFB6C1
+    BackgroundColor #F0F8FF
+    BorderColor #4169E1
+}
+
+|Organizador|
+start
+:Accede al sistema;
+:Completa formulario\nde evento;
+:Sube imágenes\ny documentos;
+
+|Sistema|
+:Valida datos\nde entrada;
+
+if (¿Datos válidos?) then (Sí)
+    :Crea evento\nen base de datos;
+    :Genera funciones\nautomáticamente;
+    :Indexa evento\npara búsqueda;
+    :Notifica usuarios\ninteresados;
+    
+    |Organizador|
+    :Recibe confirmación\ny ID del evento;
+    
+else (No)
+    :Retorna errores\nde validación;
+    
+    |Organizador|
+    :Corrige datos\ny reintenta;
+endif
+
+stop
+
+@enduml

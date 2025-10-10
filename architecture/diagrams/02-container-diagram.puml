@@ -1,0 +1,71 @@
+@startuml C4_Container_ViveMedellin
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+
+title Diagrama de Contenedores - Plataforma ViveMedellin
+
+Person(ciudadano, "Ciudadano", "Usuario final de la plataforma")
+Person(organizador, "Organizador", "Gestor de eventos")
+Person(admin, "Administrador", "Supervisor del sistema")
+
+System_Boundary(c1, "Plataforma ViveMedellin") {
+    Container(web_app, "Aplicación Web", "React.js + TypeScript", "Interfaz web responsive para todos los usuarios")
+    Container(mobile_app, "Aplicación Móvil", "React Native", "App nativa para iOS y Android")
+    Container(admin_panel, "Panel Administrativo", "React.js", "Interface administrativa avanzada")
+    
+    Container(api_gateway, "API Gateway", "Spring Cloud Gateway", "Punto único de entrada y enrutamiento")
+    Container(backend_api, "API Principal", "Spring Boot 3.5.6 + Java 21", "API REST con lógica de negocio principal")
+    Container(auth_service, "Servicio de Autenticación", "Spring Security + JWT", "Gestión de usuarios y permisos")
+    Container(notification_service, "Servicio de Notificaciones", "Spring Boot + WebSocket", "Notificaciones en tiempo real")
+    Container(search_service, "Servicio de Búsqueda", "Spring Boot + Elasticsearch", "Búsqueda avanzada e indexación")
+    
+    Container(file_storage, "Almacenamiento", "MinIO/AWS S3", "Imágenes y documentos")
+}
+
+ContainerDb(main_db, "Base de Datos Principal", "PostgreSQL 18", "Datos transaccionales principales")
+ContainerDb(cache, "Cache Distribuido", "Redis Cluster", "Cache de sesiones y datos frecuentes")
+ContainerDb(search_index, "Índice de Búsqueda", "Elasticsearch", "Índices optimizados para búsqueda")
+ContainerDb(metrics_db, "Métricas y Logs", "InfluxDB + Grafana", "Monitoreo y analíticas")
+
+System_Ext(email_provider, "Proveedor de Email", "SendGrid/AWS SES", "Envío masivo de emails")
+System_Ext(payment_gateway, "Pasarela de Pagos", "Stripe/PayU Colombia", "Procesamiento de pagos")
+System_Ext(maps_service, "Servicio de Mapas", "Google Maps API", "Geolocalización y direcciones")
+System_Ext(sms_provider, "Proveedor SMS", "Twilio/AWS SNS", "Notificaciones SMS")
+
+' Relaciones de usuarios
+Rel(ciudadano, web_app, "Navega y busca eventos", "HTTPS")
+Rel(ciudadano, mobile_app, "Interactúa desde móvil", "HTTPS")
+Rel(organizador, web_app, "Gestiona sus eventos", "HTTPS")
+Rel(admin, admin_panel, "Administra la plataforma", "HTTPS")
+
+' Relaciones internas
+Rel(web_app, api_gateway, "Consume APIs", "HTTPS/JSON")
+Rel(mobile_app, api_gateway, "Consume APIs", "HTTPS/JSON")
+Rel(admin_panel, api_gateway, "APIs administrativas", "HTTPS/JSON")
+
+Rel(api_gateway, backend_api, "Enruta peticiones principales", "HTTP/JSON")
+Rel(api_gateway, auth_service, "Validación y autenticación", "HTTP/JSON")
+Rel(api_gateway, notification_service, "Notificaciones push", "HTTP/JSON")
+Rel(api_gateway, search_service, "Búsquedas complejas", "HTTP/JSON")
+
+' Persistencia
+Rel(backend_api, main_db, "CRUD operaciones", "JDBC/SQL")
+Rel(auth_service, main_db, "Gestión de usuarios", "JDBC/SQL")
+Rel(backend_api, cache, "Cache de datos", "Redis Protocol")
+Rel(auth_service, cache, "Cache de sesiones", "Redis Protocol")
+Rel(search_service, search_index, "Indexación y búsqueda", "HTTP/JSON")
+
+' Servicios externos
+Rel(notification_service, email_provider, "Envío de emails", "HTTPS/API")
+Rel(notification_service, sms_provider, "Envío de SMS", "HTTPS/API")
+Rel(backend_api, payment_gateway, "Procesa pagos", "HTTPS/API")
+Rel(backend_api, maps_service, "Geocodificación", "HTTPS/API")
+Rel(backend_api, file_storage, "Gestión de archivos", "S3/MinIO API")
+
+' Monitoreo
+Rel(backend_api, metrics_db, "Métricas de aplicación", "HTTP")
+Rel(auth_service, metrics_db, "Métricas de seguridad", "HTTP")
+Rel(notification_service, metrics_db, "Métricas de notificaciones", "HTTP")
+
+@enduml

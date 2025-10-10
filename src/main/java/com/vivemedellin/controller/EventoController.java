@@ -11,7 +11,9 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -247,6 +249,182 @@ public class EventoController {
         }
         
         List<EventoResponse> eventos = eventoService.busquedaTextoCompleto(q.trim());
+        return ResponseEntity.ok(eventos);
+    }
+    
+    @Operation(summary = "Búsqueda avanzada con filtros múltiples", 
+               description = "Busca eventos usando combinación de filtros: texto, ubicación, categoría, fechas, etc.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Resultados de búsqueda obtenidos exitosamente"),
+        @ApiResponse(responseCode = "400", description = "Parámetros de búsqueda inválidos")
+    })
+    @GetMapping("/buscar/avanzada")
+    public ResponseEntity<Page<EventoResponse>> busquedaAvanzada(
+            @Parameter(description = "Texto para buscar en título/descripción") @RequestParam(required = false) String texto,
+            @Parameter(description = "Ubicación (comuna, barrio o dirección)") @RequestParam(required = false) String ubicacion,
+            @Parameter(description = "Categoría del evento") @RequestParam(required = false) String categoria,
+            @Parameter(description = "Fecha inicial del rango") @RequestParam(required = false) 
+                @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fechaDesde,
+            @Parameter(description = "Fecha final del rango") @RequestParam(required = false) 
+                @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fechaFin,
+            @Parameter(description = "Solo eventos destacados") @RequestParam(required = false) Boolean destacado,
+            @Parameter(description = "Solo eventos gratuitos") @RequestParam(required = false) Boolean gratuito,
+            @Parameter(description = "Modalidad del evento") @RequestParam(required = false) String modalidad,
+            @Parameter(description = "Nombre del organizador") @RequestParam(required = false) String organizador,
+            @Parameter(description = "Solo eventos activos") @RequestParam(required = false, defaultValue = "true") Boolean soloActivos,
+            @Parameter(description = "Número de página") @RequestParam(required = false, defaultValue = "0") Integer page,
+            @Parameter(description = "Tamaño de página") @RequestParam(required = false, defaultValue = "10") Integer size,
+            @Parameter(description = "Campo para ordenar") @RequestParam(required = false, defaultValue = "fecha") String ordenarPor,
+            @Parameter(description = "Dirección de ordenamiento") @RequestParam(required = false, defaultValue = "ASC") String direccion) {
+        
+        log.info("Búsqueda avanzada - Texto: {}, Ubicación: {}, Categoría: {}, Fechas: {} a {}", 
+                 texto, ubicacion, categoria, fechaDesde, fechaFin);
+        
+        try {
+            EventoFiltrosDTO filtros = EventoFiltrosDTO.builder()
+                .texto(texto)
+                .ubicacion(ubicacion)
+                .categoria(categoria)
+                .fechaDesde(fechaDesde)
+                .fechaHasta(fechaFin)
+                .destacado(destacado)
+                .gratuito(gratuito)
+                .modalidad(modalidad)
+                .organizador(organizador)
+                .soloActivos(soloActivos)
+                .page(page)
+                .size(size)
+                .ordenarPor(ordenarPor)
+                .direccion(direccion)
+                .build();
+            
+            Page<EventoResponse> eventos = eventoService.busquedaAvanzada(filtros);
+            return ResponseEntity.ok(eventos);
+            
+        } catch (IllegalArgumentException e) {
+            log.error("Parámetros de búsqueda inválidos: {}", e.getMessage());
+            return ResponseEntity.badRequest().build();
+        }
+    }
+    
+    @Operation(summary = "Búsqueda por palabras clave", 
+               description = "Busca eventos por palabras clave en múltiples campos (título, descripción, categoría, organizador, ubicación)")
+    @ApiResponse(responseCode = "200", description = "Resultados de búsqueda obtenidos exitosamente")
+    @GetMapping("/buscar/keywords")
+    public ResponseEntity<Page<EventoResponse>> buscarPorPalabrasClaves(
+            @Parameter(description = "Palabras clave separadas por espacios", required = true) @RequestParam String q,
+            @Parameter(description = "Número de página") @RequestParam(required = false, defaultValue = "0") int page,
+            @Parameter(description = "Tamaño de página") @RequestParam(required = false, defaultValue = "10") int size) {
+        
+        log.info("Búsqueda por palabras clave: {}", q);
+        
+        if (q == null || q.trim().isEmpty()) {
+            return ResponseEntity.badRequest().build();
+        }
+        
+        try {
+            Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "destacado", "fecha"));
+            Page<EventoResponse> eventos = eventoService.buscarPorPalabrasClaves(q.trim(), pageable);
+            return ResponseEntity.ok(eventos);
+        } catch (IllegalArgumentException e) {
+            log.error("Error en búsqueda por palabras clave: {}", e.getMessage());
+            return ResponseEntity.badRequest().build();
+        }
+    }
+    
+    @Operation(summary = "Buscar eventos por ubicación", 
+               description = "Busca eventos próximos por ubicación (comuna, barrio o dirección)")
+    @ApiResponse(responseCode = "200", description = "Eventos encontrados exitosamente")
+    @GetMapping("/buscar/ubicacion")
+    public ResponseEntity<List<EventoResponse>> buscarPorUbicacion(
+            @Parameter(description = "Ubicación a buscar", required = true) @RequestParam String ubicacion) {
+        
+        log.info("Búsqueda por ubicación: {}", ubicacion);
+        
+        if (ubicacion == null || ubicacion.trim().isEmpty()) {
+            return ResponseEntity.badRequest().build();
+        }
+        
+        try {
+            List<EventoResponse> eventos = eventoService.buscarPorUbicacion(ubicacion.trim());
+            return ResponseEntity.ok(eventos);
+        } catch (IllegalArgumentException e) {
+            log.error("Error en búsqueda por ubicación: {}", e.getMessage());
+            return ResponseEntity.badRequest().build();
+        }
+    }
+    
+    @Operation(summary = "Buscar eventos por fecha específica", 
+               description = "Busca todos los eventos que ocurren en una fecha específica")
+    @ApiResponse(responseCode = "200", description = "Eventos encontrados exitosamente")
+    @GetMapping("/buscar/fecha")
+    public ResponseEntity<List<EventoResponse>> buscarPorFecha(
+            @Parameter(description = "Fecha a buscar", required = true) @RequestParam 
+                @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fecha) {
+        
+        log.info("Búsqueda por fecha: {}", fecha);
+        
+        if (fecha == null) {
+            return ResponseEntity.badRequest().build();
+        }
+        
+        try {
+            List<EventoResponse> eventos = eventoService.buscarPorFecha(fecha);
+            return ResponseEntity.ok(eventos);
+        } catch (IllegalArgumentException e) {
+            log.error("Error en búsqueda por fecha: {}", e.getMessage());
+            return ResponseEntity.badRequest().build();
+        }
+    }
+    
+    @Operation(summary = "Buscar eventos por rango de fechas", 
+               description = "Busca eventos que ocurren en un rango de fechas")
+    @ApiResponse(responseCode = "200", description = "Eventos encontrados exitosamente")
+    @GetMapping("/buscar/rango-fechas")
+    public ResponseEntity<List<EventoResponse>> buscarPorRangoFechas(
+            @Parameter(description = "Fecha inicial") @RequestParam(required = false) 
+                @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fechaDesde,
+            @Parameter(description = "Fecha final") @RequestParam(required = false) 
+                @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fechaHasta) {
+        
+        log.info("Búsqueda por rango de fechas: {} a {}", fechaDesde, fechaHasta);
+        
+        try {
+            List<EventoResponse> eventos = eventoService.buscarPorRangoFechas(fechaDesde, fechaHasta);
+            return ResponseEntity.ok(eventos);
+        } catch (IllegalArgumentException e) {
+            log.error("Error en búsqueda por rango de fechas: {}", e.getMessage());
+            return ResponseEntity.badRequest().build();
+        }
+    }
+    
+    @Operation(summary = "Listar eventos próximos", 
+               description = "Obtiene eventos con fecha mayor o igual a hoy, ordenados por fecha")
+    @ApiResponse(responseCode = "200", description = "Eventos próximos obtenidos exitosamente")
+    @GetMapping("/proximos")
+    public ResponseEntity<List<EventoResponse>> listarEventosProximos(
+            @Parameter(description = "Número de página") @RequestParam(required = false, defaultValue = "0") int page,
+            @Parameter(description = "Tamaño de página") @RequestParam(required = false, defaultValue = "20") int size) {
+        
+        log.info("Listando eventos próximos");
+        
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.ASC, "fecha"));
+        List<EventoResponse> eventos = eventoService.buscarEventosProximos(pageable);
+        return ResponseEntity.ok(eventos);
+    }
+    
+    @Operation(summary = "Listar eventos gratuitos", 
+               description = "Obtiene todos los eventos próximos con entrada gratuita")
+    @ApiResponse(responseCode = "200", description = "Eventos gratuitos obtenidos exitosamente")
+    @GetMapping("/gratuitos")
+    public ResponseEntity<List<EventoResponse>> listarEventosGratuitos(
+            @Parameter(description = "Número de página") @RequestParam(required = false, defaultValue = "0") int page,
+            @Parameter(description = "Tamaño de página") @RequestParam(required = false, defaultValue = "20") int size) {
+        
+        log.info("Listando eventos gratuitos");
+        
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.ASC, "fecha"));
+        List<EventoResponse> eventos = eventoService.buscarEventosGratuitos(pageable);
         return ResponseEntity.ok(eventos);
     }
     

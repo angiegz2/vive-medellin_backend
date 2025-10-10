@@ -1,0 +1,28 @@
+@startuml C4_Context_ViveMedellin
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+LAYOUT_WITH_LEGEND()
+
+title Diagrama de Contexto - Sistema ViveMedellin
+
+Person(ciudadano, "Ciudadano de Medellín", "Usuario que busca y participa en eventos locales")
+Person(organizador, "Organizador de Eventos", "Crea y gestiona eventos en la plataforma")
+Person(admin, "Administrador del Sistema", "Gestiona la plataforma y supervisa contenido")
+
+System(vivemedellin, "Plataforma ViveMedellin", "Sistema integral para gestión y descubrimiento de eventos en Medellín")
+
+System_Ext(email, "Sistema de Email", "Servicio de envío de notificaciones")
+System_Ext(payment, "Pasarela de Pagos", "Procesamiento seguro de pagos")
+System_Ext(maps, "Google Maps API", "Servicios de geolocalización")
+System_Ext(social, "Redes Sociales", "Integración con plataformas sociales")
+
+Rel(ciudadano, vivemedellin, "Busca eventos, compra tickets, califica", "HTTPS")
+Rel(organizador, vivemedellin, "Crea y gestiona eventos", "HTTPS")
+Rel(admin, vivemedellin, "Administra y supervisa la plataforma", "HTTPS")
+
+Rel(vivemedellin, email, "Envía notificaciones y confirmaciones", "SMTP")
+Rel(vivemedellin, payment, "Procesa pagos de eventos", "HTTPS/API")
+Rel(vivemedellin, maps, "Obtiene coordenadas y direcciones", "HTTPS/API")
+Rel(vivemedellin, social, "Comparte eventos y promociona", "HTTPS/API")
+
+@enduml
