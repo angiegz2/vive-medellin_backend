@@ -53,6 +53,24 @@ public class EventoFiltrosDTO {
     @Schema(description = "Solo eventos activos/publicados", example = "true")
     private Boolean soloActivos;
 
+    @Schema(description = "Rango de precios - mínimo", example = "0")
+    private Double precioMinimo;
+
+    @Schema(description = "Rango de precios - máximo", example = "50000")
+    private Double precioMaximo;
+
+    @Schema(description = "Horario del evento", example = "DIURNO", allowableValues = {"DIURNO", "NOCTURNO"})
+    private String horario;
+
+    @Schema(description = "Servicio adicional disponible", example = "Parqueadero")
+    private String servicio;
+
+    @Schema(description = "Evento disponible (no cancelado, con cupo)", example = "true")
+    private Boolean disponible;
+
+    @Schema(description = "Tipo de vista de resultados", example = "MOSAICO", allowableValues = {"MOSAICO", "LISTA"})
+    private String tipoVista;
+
     @Schema(description = "Número de página (inicia en 0)", example = "0")
     private Integer page;
 
@@ -79,19 +97,33 @@ public class EventoFiltrosDTO {
                destacado != null ||
                gratuito != null ||
                (modalidad != null && !modalidad.trim().isEmpty()) ||
-               (organizador != null && !organizador.trim().isEmpty());
+               (organizador != null && !organizador.trim().isEmpty()) ||
+               precioMinimo != null ||
+               precioMaximo != null ||
+               (horario != null && !horario.trim().isEmpty()) ||
+               (servicio != null && !servicio.trim().isEmpty()) ||
+               disponible != null;
     }
 
     /**
-     * Obtiene el tamaño de página con valor por defecto
+     * Obtiene el tamaño de página según el tipo de vista
+     * MOSAICO: 20 resultados por página (por defecto)
+     * LISTA: 50 resultados por página
      * 
-     * @return tamaño de página (por defecto 10)
+     * @return tamaño de página apropiado
      */
     public int getSizeOrDefault() {
-        if (size == null || size <= 0) {
-            return 10;
+        // Si se especificó un tamaño manualmente, usarlo
+        if (size != null && size > 0) {
+            return size;
         }
-        return size;
+        
+        // Determinar tamaño según tipo de vista
+        if ("LISTA".equalsIgnoreCase(tipoVista)) {
+            return 50; // Vista de lista: 50 resultados
+        } else {
+            return 20; // Vista de mosaico (por defecto): 20 resultados
+        }
     }
 
     /**

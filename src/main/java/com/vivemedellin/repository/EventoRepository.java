@@ -93,4 +93,29 @@ public interface EventoRepository extends JpaRepository<Evento, Long>, JpaSpecif
            "e.descripcion ILIKE %:texto% OR " +
            "e.organizador.nombre ILIKE %:texto%")
     List<Evento> busquedaTextoCompleto(@Param("texto") String texto);
+    
+    // Contar eventos destacados con un estado específico
+    @Query("SELECT COUNT(e) FROM Evento e WHERE e.destacado = true AND e.status = :status")
+    long countByDestacadoTrueAndStatus(@Param("status") Evento.EstadoEvento status);
+    
+    // Contar eventos destacados vigentes (que tienen al menos una función futura)
+    @Query("""
+        SELECT COUNT(DISTINCT e) FROM Evento e 
+        JOIN e.funciones f 
+        WHERE e.destacado = true 
+        AND e.status = :status 
+        AND (f.fecha > CURRENT_DATE OR (f.fecha = CURRENT_DATE AND f.horario > CURRENT_TIME))
+        """)
+    long countDestacadosVigentes(@Param("status") Evento.EstadoEvento status);
+    
+    // Obtener eventos destacados vigentes (para carrusel)
+    @Query("""
+        SELECT DISTINCT e FROM Evento e 
+        JOIN FETCH e.funciones f 
+        WHERE e.destacado = true 
+        AND e.status = 'PUBLISHED' 
+        AND (f.fecha > CURRENT_DATE OR (f.fecha = CURRENT_DATE AND f.horario > CURRENT_TIME))
+        ORDER BY e.updatedAt DESC
+        """)
+    List<Evento> findDestacadosVigentes();
 }
