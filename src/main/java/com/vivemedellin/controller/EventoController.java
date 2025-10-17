@@ -239,18 +239,19 @@ public class EventoController {
                description = "Busca eventos por texto en título, descripción u organizador")
     @ApiResponse(responseCode = "200", description = "Resultados de búsqueda obtenidos exitosamente")
     @GetMapping("/buscar/texto")
-    public ResponseEntity<List<EventoResponse>> busquedaTextoCompleto(
-            @Parameter(description = "Texto a buscar", required = true) @RequestParam String q) {
-        
-        log.info("Búsqueda de texto completo: {}", q);
-        
-        if (q == null || q.trim().isEmpty()) {
-            return ResponseEntity.badRequest().build();
-        }
-        
-        List<EventoResponse> eventos = eventoService.busquedaTextoCompleto(q.trim());
-        return ResponseEntity.ok(eventos);
+public ResponseEntity<List<EventoResponse>> busquedaTextoCompleto(
+        @RequestParam(required = false) String q) {
+
+    log.info("Búsqueda de texto completo: {}", q);
+
+    if (q == null || q.isBlank()) {
+        return ResponseEntity.badRequest().build();
     }
+
+    String textoBusqueda = q.trim();
+    List<EventoResponse> eventos = eventoService.busquedaTextoCompleto(textoBusqueda);
+    return ResponseEntity.ok(eventos);
+}
     
     @Operation(summary = "Búsqueda avanzada con filtros múltiples", 
                description = "Busca eventos usando combinación de filtros: texto, ubicación, categoría, fechas, etc.")

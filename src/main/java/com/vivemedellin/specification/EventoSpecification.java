@@ -249,6 +249,7 @@ public class EventoSpecification {
      * 
      * @return Specification con ordenamiento
      */
+    @SuppressWarnings("null")
     public static Specification<Evento> ordenadoPorFecha() {
         return (root, query, criteriaBuilder) -> {
             query.orderBy(criteriaBuilder.asc(root.get("fecha")));
