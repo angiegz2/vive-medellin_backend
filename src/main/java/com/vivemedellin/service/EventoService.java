@@ -763,8 +763,8 @@ public class EventoService {
                 .comunaBarrio(ub.getComunaBarrio())
                 .ciudad("Medellín")
                 .departamento("Antioquia")
-                .latitud(null) // TODO: Agregar si existe en el modelo
-                .longitud(null) // TODO: Agregar si existe en el modelo
+                .latitud(null) 
+                .longitud(null) 
                 .enlaceMapa(enlaceMapa)
                 .indicacionesAcceso(ub.getDireccionDetallada())
                 .build();
@@ -779,9 +779,9 @@ public class EventoService {
                 .nombre(org.getNombre())
                 .email(org.getEmail())
                 .telefono(org.getCelular())
-                .sitioWeb(null) // TODO: Agregar si existe en el modelo
-                .descripcion(null) // TODO: Agregar si existe en el modelo
-                .logoUrl(null) // TODO: Agregar si existe en el modelo
+                .sitioWeb(null) 
+                .descripcion(null) 
+                .logoUrl(null)
                 .build();
         }
         
@@ -820,14 +820,14 @@ public class EventoService {
             .mensajeEstado(mensajeEstado)
             .destacado(evento.getDestacado())
             
-            // Material complementario (TODO: Agregar cuando esté en el modelo)
+            // Material complementario 
             .imagenes(List.of(evento.getImagenCaratula())) // Por ahora solo la carátula
-            .videos(List.of()) // TODO: Agregar cuando exista en el modelo
-            .enlaces(List.of()) // TODO: Agregar cuando exista en el modelo
+            .videos(List.of()) //
+            .enlaces(List.of()) // 
             
             // Información complementaria
-            .requisitos(null) // TODO: Agregar cuando exista en el modelo
-            .recomendaciones(null) // TODO: Agregar cuando exista en el modelo
+            .requisitos(null) // 
+            .recomendaciones(null) //
             .informacionAdicional(String.join(", ", evento.getServiciosAdicionales()))
             
             // Metadatos
