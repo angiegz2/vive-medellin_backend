@@ -39,6 +39,6 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           args: >
-            -Dsonar.projectKey=UdeA_vive-medellín_backend
+            -Dsonar.projectKey=UdeA_vive-medellin_backend
             -Dsonar.organization=udea
             -Dsonar.java.binaries=**/target/classes
