@@ -1,0 +1,345 @@
+name: ViveMedellin CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  JAVA_VERSION: '21'
+  MAVEN_OPTS: -Dhttp.keepAlive=false -Dmaven.wagon.http.pool=false -Dmaven.wagon.http.retryHandler.class=standard -Dmaven.wagon.http.retryHandler.count=3
+
+jobs:
+  # Job 1: Build y Test
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: vivemedellin_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 21
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: 'temurin'
+        cache: 'maven'
+
+    - name: Cache Maven packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.m2
+        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+        restore-keys: ${{ runner.os }}-m2
+
+    - name: Build with Maven
+      run: mvn clean compile -B -V
+
+    - name: Run tests
+      run: mvn test -B
+      env:
+        SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/vivemedellin_test
+        SPRING_DATASOURCE_USERNAME: postgres
+        SPRING_DATASOURCE_PASSWORD: postgres
+
+    - name: Generate test report
+      if: always()
+      run: mvn surefire-report:report
+
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-results
+        path: target/surefire-reports/
+
+    - name: Package application
+      run: mvn package -DskipTests -B
+
+    - name: Upload JAR artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-jar
+        path: target/*.jar
+
+  # Job 2: Security Scan
+  security-scan:
+    name: Security Vulnerability Scan
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 21
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: 'temurin'
+        cache: 'maven'
+
+    - name: OWASP Dependency Check
+      run: |
+        mvn org.owasp:dependency-check-maven:check \
+          -DfailBuildOnCVSS=8 \
+          -DskipProvidedScope=true \
+          -DskipRuntimeScope=false
+
+    - name: Upload OWASP report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: owasp-report
+        path: target/dependency-check-report.html
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+
+    - name: Upload Trivy results to GitHub Security
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  # Job 3: Code Quality
+  code-quality:
+    name: Code Quality Analysis
+    runs-on: ubuntu-latest
+    needs: build-and-test
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Shallow clones should be disabled for better analysis
+
+    - name: Set up JDK 21
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: 'temurin'
+        cache: 'maven'
+
+    - name: Cache SonarCloud packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.sonar/cache
+        key: ${{ runner.os }}-sonar
+        restore-keys: ${{ runner.os }}-sonar
+
+    # Descomentar cuando configures SonarCloud
+    # - name: SonarCloud Scan
+    #   run: |
+    #     mvn verify sonar:sonar \
+    #       -Dsonar.projectKey=ViveMedellin \
+    #       -Dsonar.organization=your-org \
+    #       -Dsonar.host.url=https://sonarcloud.io \
+    #       -Dsonar.login=${{ secrets.SONAR_TOKEN }}
+
+  # Job 4: Build Docker Image
+  docker-build:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs: [build-and-test, security-scan]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    # Opcional: Login to GitHub Container Registry
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: |
+          ${{ secrets.DOCKERHUB_USERNAME }}/vivemedellin
+          ghcr.io/${{ github.repository }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        build-args: |
+          BUILD_DATE=${{ github.event.head_commit.timestamp }}
+          VCS_REF=${{ github.sha }}
+          VERSION=${{ github.ref_name }}
+
+    - name: Run Trivy vulnerability scanner on image
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: '${{ secrets.DOCKERHUB_USERNAME }}/vivemedellin:latest'
+        format: 'sarif'
+        output: 'trivy-image-results.sarif'
+
+    - name: Upload Trivy image scan results
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: 'trivy-image-results.sarif'
+
+  # Job 5: Deploy to Staging (solo en branch develop)
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: docker-build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    environment:
+      name: staging
+      url: https://staging.vivemedellin.com
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Deploy to staging
+      run: |
+        echo "Deploying to staging environment..."
+        # Aquí agregarías comandos de deployment real
+        # Ejemplo con docker-compose en servidor remoto:
+        # ssh ${{ secrets.STAGING_HOST }} "cd /app && docker-compose pull && docker-compose up -d"
+
+    - name: Health check
+      run: |
+        echo "Running health check..."
+        # curl -f https://staging.vivemedellin.com/actuator/health || exit 1
+
+    - name: Notify deployment
+      if: always()
+      run: |
+        echo "Deployment to staging completed"
+        # Aquí puedes agregar notificación a Slack/Teams/Discord
+
+  # Job 6: Deploy to Production (solo en branch main)
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: docker-build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment:
+      name: production
+      url: https://vivemedellin.com
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Deploy to production
+      run: |
+        echo "Deploying to production environment..."
+        # Aquí agregarías comandos de deployment real
+        # Ejemplo: kubectl apply -f k8s/ o terraform apply
+
+    - name: Health check
+      run: |
+        echo "Running health check..."
+        # curl -f https://vivemedellin.com/actuator/health || exit 1
+
+    - name: Notify deployment
+      if: always()
+      run: |
+        echo "Deployment to production completed"
+        # Notificación a Slack/Teams
+
+  # Job 7: Performance Tests (opcional, solo en main)
+  performance-test:
+    name: Performance Testing
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run JMeter tests
+      run: |
+        echo "Running performance tests..."
+        # jmeter -n -t tests/performance/load-test.jmx -l results.jtl
+
+    - name: Generate performance report
+      if: always()
+      run: |
+        echo "Generating performance report..."
+        # jmeter -g results.jtl -o report/
+
+    - name: Upload performance results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: performance-results
+        path: report/
+
+  # Job 8: Notification
+  notification:
+    name: Send Notifications
+    runs-on: ubuntu-latest
+    needs: [build-and-test, security-scan, code-quality, docker-build]
+    if: always()
+    
+    steps:
+    - name: Send Slack notification
+      if: always()
+      run: |
+        echo "Pipeline completed with status: ${{ job.status }}"
+        # curl -X POST ${{ secrets.SLACK_WEBHOOK }} \
+        #   -H 'Content-Type: application/json' \
+        #   -d '{"text":"Build ${{ github.run_number }} - ${{ job.status }}"}'
+
+    - name: Create GitHub deployment status
+      if: always()
+      run: |
+        echo "Creating deployment status..."
+        # gh api repos/${{ github.repository }}/deployments

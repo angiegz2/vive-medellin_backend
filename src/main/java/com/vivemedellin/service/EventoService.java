@@ -2,6 +2,7 @@ package com.vivemedellin.service;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -16,7 +17,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.vivemedellin.dto.ActualizarEventoRequest;
 import com.vivemedellin.dto.CrearEventoRequest;
+import com.vivemedellin.dto.EventoAdminActionsDTO;
+import com.vivemedellin.dto.EventoDetalleDTO;
 import com.vivemedellin.dto.EventoFiltrosDTO;
+import com.vivemedellin.dto.EventoListaDTO;
+import com.vivemedellin.dto.EventoMosaicoDTO;
 import com.vivemedellin.dto.EventoResponse;
 import com.vivemedellin.dto.FuncionDTO;
 import com.vivemedellin.dto.OrganizadorDTO;
@@ -303,7 +308,7 @@ public class EventoService {
             filtros.getDestacado(),
             filtros.getGratuito(),
             filtros.getModalidad(),
-            filtros.getSoloActivos() != null ? filtros.getSoloActivos() : true
+            Boolean.TRUE.equals(filtros.getSoloActivos())
         );
         
         // Agregar filtro de organizador si se especificó
@@ -612,5 +617,283 @@ public class EventoService {
         dto.setCreatedAt(funcion.getCreatedAt());
         dto.setUpdatedAt(funcion.getUpdatedAt());
         return dto;
+    }
+    
+    /**
+     * Convierte Evento a EventoMosaicoDTO (vista de tarjetas)
+     * Optimizado para mostrar 20 resultados por página
+     */
+    public EventoMosaicoDTO convertirAEventoMosaico(Evento evento) {
+        // Obtener primera función para hora
+        LocalTime horaEvento = evento.getFunciones().isEmpty() ? null : 
+            evento.getFunciones().get(0).getHorario();
+        
+        // Verificar disponibilidad
+        boolean disponible = evento.getStatus() == Evento.EstadoEvento.PUBLISHED &&
+                           evento.getFecha().isAfter(LocalDate.now().minusDays(1));
+        
+        return EventoMosaicoDTO.builder()
+            .id(evento.getId())
+            .imagenCaratula(evento.getImagenCaratula())
+            .titulo(evento.getTitulo())
+            .categoria(evento.getCategoria())
+            .fechaEvento(evento.getFecha())
+            .horaEvento(horaEvento)
+            .ubicacion(evento.getUbicacion() != null ? evento.getUbicacion().getComunaBarrio() : null)
+            .direccionCompleta(evento.getUbicacion() != null ? evento.getUbicacion().getDireccionCompleta() : null)
+            .nombreOrganizador(evento.getOrganizador() != null ? evento.getOrganizador().getNombre() : null)
+            .valorIngreso(evento.getValorIngreso())
+            .destacado(evento.getDestacado())
+            .modalidad(evento.getModalidad() != null ? evento.getModalidad().name() : null)
+            .disponible(disponible)
+            .build();
+    }
+    
+    /**
+     * Convierte Evento a EventoListaDTO (vista de lista compacta)
+     * Optimizado para mostrar 50 resultados por página
+     */
+    public EventoListaDTO convertirAEventoLista(Evento evento) {
+        // Obtener primera función para hora
+        LocalTime horaEvento = evento.getFunciones().isEmpty() ? null : 
+            evento.getFunciones().get(0).getHorario();
+        
+        // Verificar disponibilidad
+        boolean disponible = evento.getStatus() == Evento.EstadoEvento.PUBLISHED &&
+                           evento.getFecha().isAfter(LocalDate.now().minusDays(1));
+        
+        return EventoListaDTO.builder()
+            .id(evento.getId())
+            .titulo(evento.getTitulo())
+            .fechaEvento(evento.getFecha())
+            .horaEvento(horaEvento)
+            .ubicacion(evento.getUbicacion() != null ? evento.getUbicacion().getComunaBarrio() : null)
+            .direccionCompleta(evento.getUbicacion() != null ? evento.getUbicacion().getDireccionCompleta() : null)
+            .nombreOrganizador(evento.getOrganizador() != null ? evento.getOrganizador().getNombre() : null)
+            .categoria(evento.getCategoria())
+            .valorIngreso(evento.getValorIngreso())
+            .disponible(disponible)
+            .build();
+    }
+    
+    /**
+     * Convierte Evento a EventoDetalleDTO con toda la información completa
+     * para mostrar en la página de detalle del evento.
+     * 
+     * Incluye:
+     * - Información básica
+     * - Todas las funciones (fechas y horarios)
+     * - Ubicación completa con enlace a Google Maps
+     * - Datos del organizador con información de contacto
+     * - Material complementario (imágenes, videos, enlaces)
+     * - Estado del evento (ACTIVO, CANCELADO, FINALIZADO)
+     * - Información adicional y recomendaciones
+     */
+    public EventoDetalleDTO convertirAEventoDetalle(Evento evento) {
+        return convertirAEventoDetalle(evento, false, 0L);
+    }
+    
+    /**
+     * Convierte un objeto Evento en un EventoDetalleDTO completo
+     * @param evento El evento a convertir
+     * @param esAdmin Si el usuario actual es administrador
+     * @param cantidadDestacados Cantidad actual de eventos destacados (solo si esAdmin=true)
+     */
+    public EventoDetalleDTO convertirAEventoDetalle(Evento evento, boolean esAdmin, Long cantidadDestacados) {
+        // Calcular estado del evento
+        String estadoEvento;
+        String mensajeEstado = null;
+        
+        if (evento.getStatus() == Evento.EstadoEvento.CANCELLED) {
+            estadoEvento = "CANCELADO";
+            mensajeEstado = "Este evento ha sido cancelado";
+        } else if (evento.getStatus() == Evento.EstadoEvento.SUSPENDED) {
+            estadoEvento = "SUSPENDIDO";
+            mensajeEstado = "Este evento ha sido suspendido temporalmente";
+        } else {
+            // Verificar si todas las funciones ya pasaron
+            boolean todasFinalizadas = evento.getFunciones().stream()
+                .allMatch(f -> f.getFecha().isBefore(LocalDate.now()) ||
+                             (f.getFecha().isEqual(LocalDate.now()) && 
+                              f.getHorario().isBefore(LocalTime.now())));
+            
+            if (todasFinalizadas && !evento.getFunciones().isEmpty()) {
+                estadoEvento = "FINALIZADO";
+                mensajeEstado = "Evento finalizado";
+            } else {
+                estadoEvento = "ACTIVO";
+            }
+        }
+        
+        // Convertir funciones
+        List<EventoDetalleDTO.FuncionDTO> funcionesDTO = evento.getFunciones().stream()
+            .map(funcion -> {
+                boolean finalizada = funcion.getFecha().isBefore(LocalDate.now()) ||
+                                   (funcion.getFecha().isEqual(LocalDate.now()) && 
+                                    funcion.getHorario().isBefore(LocalTime.now()));
+                
+                // Formatear día de la semana
+                String dia = formatearDiaSemana(funcion.getFecha());
+                
+                return EventoDetalleDTO.FuncionDTO.builder()
+                    .id(funcion.getId())
+                    .fecha(funcion.getFecha())
+                    .horario(funcion.getHorario())
+                    .dia(dia)
+                    .estaFinalizada(finalizada)
+                    .build();
+            })
+            .collect(Collectors.toList());
+        
+        // Convertir ubicación
+        EventoDetalleDTO.UbicacionDetalleDTO ubicacionDTO = null;
+        if (evento.getUbicacion() != null) {
+            Ubicacion ub = evento.getUbicacion();
+            
+            // Generar enlace a Google Maps si hay dirección
+            String enlaceMapa = ub.getEnlaceMapa();
+            if (enlaceMapa == null && ub.getDireccionCompleta() != null) {
+                // Generar enlace a Google Maps con la dirección
+                String direccionEncoded = ub.getDireccionCompleta().replace(" ", "+");
+                enlaceMapa = "https://www.google.com/maps/search/?api=1&query=" + direccionEncoded + ",Medellín,Colombia";
+            }
+            
+            ubicacionDTO = EventoDetalleDTO.UbicacionDetalleDTO.builder()
+                .direccionCompleta(ub.getDireccionCompleta())
+                .comunaBarrio(ub.getComunaBarrio())
+                .ciudad("Medellín")
+                .departamento("Antioquia")
+                .latitud(null) 
+                .longitud(null) 
+                .enlaceMapa(enlaceMapa)
+                .indicacionesAcceso(ub.getDireccionDetallada())
+                .build();
+        }
+        
+        // Convertir organizador
+        EventoDetalleDTO.OrganizadorDetalleDTO organizadorDTO = null;
+        if (evento.getOrganizador() != null) {
+            Organizador org = evento.getOrganizador();
+            organizadorDTO = EventoDetalleDTO.OrganizadorDetalleDTO.builder()
+                .id(null) // El organizador es embebido, no tiene ID
+                .nombre(org.getNombre())
+                .email(org.getEmail())
+                .telefono(org.getCelular())
+                .sitioWeb(null) 
+                .descripcion(null) 
+                .logoUrl(null)
+                .build();
+        }
+        
+        // Verificar si es gratuito
+        boolean esGratuito = evento.getValorIngreso() != null && 
+                           (evento.getValorIngreso().equalsIgnoreCase("gratuito") || 
+                            evento.getValorIngreso().equalsIgnoreCase("gratis") ||
+                            evento.getValorIngreso().equals("0"));
+        
+        // Construir DTO completo
+        return EventoDetalleDTO.builder()
+            // Información básica
+            .id(evento.getId())
+            .titulo(evento.getTitulo())
+            .descripcion(evento.getDescripcion())
+            .categoria(evento.getCategoria())
+            .imagenCaratula(evento.getImagenCaratula())
+            
+            // Funciones
+            .funciones(funcionesDTO)
+            
+            // Ubicación
+            .ubicacion(ubicacionDTO)
+            
+            // Capacidad y precio
+            .aforo(evento.getAforo())
+            .valorIngreso(evento.getValorIngreso())
+            .esGratuito(esGratuito)
+            
+            // Organizador
+            .organizador(organizadorDTO)
+            
+            // Modalidad y estado
+            .modalidad(evento.getModalidad() != null ? evento.getModalidad().name() : null)
+            .estadoEvento(estadoEvento)
+            .mensajeEstado(mensajeEstado)
+            .destacado(evento.getDestacado())
+            
+            // Material complementario 
+            .imagenes(List.of(evento.getImagenCaratula())) // Por ahora solo la carátula
+            .videos(List.of()) //
+            .enlaces(List.of()) // 
+            
+            // Información complementaria
+            .requisitos(null) // 
+            .recomendaciones(null) //
+            .informacionAdicional(String.join(", ", evento.getServiciosAdicionales()))
+            
+            // Metadatos
+            .fechaCreacion(evento.getCreatedAt() != null ? evento.getCreatedAt().toLocalDate() : null)
+            .fechaActualizacion(evento.getUpdatedAt() != null ? evento.getUpdatedAt().toLocalDate() : null)
+            
+            // Acciones administrativas (solo si es admin)
+            .accionesAdmin(esAdmin ? calcularAccionesAdmin(evento, cantidadDestacados) : null)
+            
+            .build();
+    }
+    
+    /**
+     * Calcula qué acciones administrativas están disponibles para un evento
+     */
+    private EventoAdminActionsDTO calcularAccionesAdmin(Evento evento, Long cantidadDestacados) {
+        // Si el evento está cancelado
+        if (evento.getStatus() == Evento.EstadoEvento.CANCELLED) {
+            return EventoAdminActionsDTO.eventoCancelado();
+        }
+        
+        boolean estaDestacado = evento.getDestacado();
+        boolean puedeDestacar = true;
+        String razonNoDestacar = null;
+        
+        // Verificar límite de destacados solo si no está destacado y se intenta destacar
+        if (!estaDestacado) {
+            if (cantidadDestacados != null && cantidadDestacados >= 3) {
+                puedeDestacar = false;
+                razonNoDestacar = "Ya existen 3 eventos destacados. Debe quitar el destacado de otro evento primero.";
+            }
+            
+            // No se pueden destacar eventos no publicados
+            if (evento.getStatus() != Evento.EstadoEvento.PUBLISHED) {
+                puedeDestacar = false;
+                razonNoDestacar = "Solo se pueden destacar eventos publicados";
+            }
+        }
+        
+        return EventoAdminActionsDTO.builder()
+            .puedeEditar(true)  // Siempre puede editar
+            .puedeCancelar(true)  // Puede cancelar si no está cancelado
+            .puedeDestacar(!estaDestacado && puedeDestacar)
+            .puedeQuitarDestacado(estaDestacado)
+            .razonNoDestacar(razonNoDestacar)
+            .cantidadDestacados(cantidadDestacados != null ? cantidadDestacados.intValue() : null)
+            .espaciosDisponibles(cantidadDestacados != null ? Math.max(0, 3 - cantidadDestacados.intValue()) : null)
+            .estaDestacado(estaDestacado)
+            .estaCancelado(false)
+            .build();
+    }
+    
+    /**
+     * Formatea una fecha a texto legible con día de la semana
+     * Ejemplo: "Sábado 20 de Octubre de 2025"
+     */
+    private String formatearDiaSemana(LocalDate fecha) {
+        String[] diasSemana = {"Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"};
+        String[] meses = {"Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", 
+                         "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"};
+        
+        int diaSemana = fecha.getDayOfWeek().getValue() % 7; // Domingo = 0
+        String nombreDia = diasSemana[diaSemana];
+        String nombreMes = meses[fecha.getMonthValue() - 1];
+        
+        return String.format("%s %d de %s de %d", 
+            nombreDia, fecha.getDayOfMonth(), nombreMes, fecha.getYear());
     }
 }

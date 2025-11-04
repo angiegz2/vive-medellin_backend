@@ -18,7 +18,8 @@ import jakarta.persistence.criteria.Predicate;
 public class EventoSpecification {
 
     /**
-     * Busca eventos por texto en título o descripción (case insensitive)
+     * Busca eventos por texto en título, descripción o nombre del organizador 
+     * (case insensitive e insensible a acentos)
      * 
      * @param texto Texto a buscar
      * @return Specification para filtrado
@@ -29,12 +30,43 @@ public class EventoSpecification {
                 return criteriaBuilder.conjunction();
             }
             
-            String pattern = "%" + texto.toLowerCase() + "%";
+            // Normalizar texto quitando acentos para búsqueda más flexible
+            String pattern = "%" + normalizarTexto(texto.toLowerCase()) + "%";
+            
+            // Buscar en título, descripción y nombre del organizador
             return criteriaBuilder.or(
-                criteriaBuilder.like(criteriaBuilder.lower(root.get("titulo")), pattern),
-                criteriaBuilder.like(criteriaBuilder.lower(root.get("descripcion")), pattern)
+                criteriaBuilder.like(
+                    criteriaBuilder.function("unaccent", String.class, 
+                        criteriaBuilder.lower(root.get("titulo"))), 
+                    pattern
+                ),
+                criteriaBuilder.like(
+                    criteriaBuilder.function("unaccent", String.class, 
+                        criteriaBuilder.lower(root.get("descripcion"))), 
+                    pattern
+                ),
+                criteriaBuilder.like(
+                    criteriaBuilder.function("unaccent", String.class, 
+                        criteriaBuilder.lower(root.get("organizador").get("nombre"))), 
+                    pattern
+                )
             );
         };
+    }
+    
+    /**
+     * Normaliza texto removiendo acentos y caracteres especiales
+     * Para búsqueda más flexible (música = musica)
+     * 
+     * @param texto Texto a normalizar
+     * @return Texto normalizado
+     */
+    private static String normalizarTexto(String texto) {
+        if (texto == null) return "";
+        
+        // Remover acentos usando normalización Unicode
+        String normalized = java.text.Normalizer.normalize(texto, java.text.Normalizer.Form.NFD);
+        return normalized.replaceAll("\\p{M}", "");
     }
 
     /**
@@ -314,18 +346,176 @@ public class EventoSpecification {
             List<Predicate> predicates = new ArrayList<>();
 
             for (String palabra : palabras) {
-                String pattern = "%" + palabra + "%";
+                String pattern = "%" + normalizarTexto(palabra) + "%";
                 Predicate predicadoPalabra = criteriaBuilder.or(
-                    criteriaBuilder.like(criteriaBuilder.lower(root.get("titulo")), pattern),
-                    criteriaBuilder.like(criteriaBuilder.lower(root.get("descripcion")), pattern),
-                    criteriaBuilder.like(criteriaBuilder.lower(root.get("categoria")), pattern),
-                    criteriaBuilder.like(criteriaBuilder.lower(root.get("organizador").get("nombre")), pattern),
-                    criteriaBuilder.like(criteriaBuilder.lower(root.get("ubicacion").get("comunaBarrio")), pattern)
+                    criteriaBuilder.like(
+                        criteriaBuilder.function("unaccent", String.class, 
+                            criteriaBuilder.lower(root.get("titulo"))), 
+                        pattern
+                    ),
+                    criteriaBuilder.like(
+                        criteriaBuilder.function("unaccent", String.class, 
+                            criteriaBuilder.lower(root.get("descripcion"))), 
+                        pattern
+                    ),
+                    criteriaBuilder.like(
+                        criteriaBuilder.function("unaccent", String.class, 
+                            criteriaBuilder.lower(root.get("categoria"))), 
+                        pattern
+                    ),
+                    criteriaBuilder.like(
+                        criteriaBuilder.function("unaccent", String.class, 
+                            criteriaBuilder.lower(root.get("organizador").get("nombre"))), 
+                        pattern
+                    ),
+                    criteriaBuilder.like(
+                        criteriaBuilder.function("unaccent", String.class, 
+                            criteriaBuilder.lower(root.get("ubicacion").get("comunaBarrio"))), 
+                        pattern
+                    )
                 );
                 predicates.add(predicadoPalabra);
             }
 
             return criteriaBuilder.and(predicates.toArray(Predicate[]::new));
+        };
+    }
+
+    /**
+     * Filtra eventos por rango de precio
+     * 
+     * @param precioMinimo Precio mínimo (null para sin límite)
+     * @param precioMaximo Precio máximo (null para sin límite)
+     * @return Specification para filtrado
+     */
+    public static Specification<Evento> conRangoPrecio(Double precioMinimo, Double precioMaximo) {
+        return (root, query, criteriaBuilder) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            
+            // Si el valor es "gratuito", lo tratamos como 0
+            if (precioMinimo != null || precioMaximo != null) {
+                // Primero, filtrar eventos con precio numérico
+                Predicate noEsGratuito = criteriaBuilder.notEqual(
+                    criteriaBuilder.lower(root.get("valorIngreso")), 
+                    "gratuito"
+                );
+                
+                if (precioMinimo != null && precioMinimo > 0) {
+                    // Solo eventos con precio >= precioMinimo
+                    predicates.add(noEsGratuito);
+                } else if (precioMinimo != null && precioMinimo == 0) {
+                    // Incluir eventos gratuitos y con precio
+                    // No agregar filtro, aceptar todos
+                }
+                
+                if (precioMaximo != null) {
+                    // Eventos gratuitos o con precio <= precioMaximo
+                    Predicate esGratuito = criteriaBuilder.equal(
+                        criteriaBuilder.lower(root.get("valorIngreso")), 
+                        "gratuito"
+                    );
+                    predicates.add(esGratuito);
+                }
+            }
+            
+            if (predicates.isEmpty()) {
+                return criteriaBuilder.conjunction();
+            }
+            
+            return criteriaBuilder.or(predicates.toArray(Predicate[]::new));
+        };
+    }
+
+    /**
+     * Filtra eventos por horario (diurno o nocturno)
+     * Diurno: 06:00 - 18:00
+     * Nocturno: 18:01 - 05:59
+     * 
+     * @param horario "DIURNO" o "NOCTURNO"
+     * @return Specification para filtrado
+     */
+    public static Specification<Evento> conHorario(String horario) {
+        return (root, query, criteriaBuilder) -> {
+            if (horario == null || horario.trim().isEmpty()) {
+                return criteriaBuilder.conjunction();
+            }
+            
+            // Acceder a la primera función del evento para obtener la hora
+            if ("DIURNO".equalsIgnoreCase(horario)) {
+                // Hora entre 06:00 y 18:00
+                return criteriaBuilder.and(
+                    criteriaBuilder.greaterThanOrEqualTo(
+                        root.join("funciones").get("horaInicio"), 
+                        java.time.LocalTime.of(6, 0)
+                    ),
+                    criteriaBuilder.lessThanOrEqualTo(
+                        root.join("funciones").get("horaInicio"), 
+                        java.time.LocalTime.of(18, 0)
+                    )
+                );
+            } else if ("NOCTURNO".equalsIgnoreCase(horario)) {
+                // Hora después de 18:00 o antes de 06:00
+                return criteriaBuilder.or(
+                    criteriaBuilder.greaterThan(
+                        root.join("funciones").get("horaInicio"), 
+                        java.time.LocalTime.of(18, 0)
+                    ),
+                    criteriaBuilder.lessThan(
+                        root.join("funciones").get("horaInicio"), 
+                        java.time.LocalTime.of(6, 0)
+                    )
+                );
+            }
+            
+            return criteriaBuilder.conjunction();
+        };
+    }
+
+    /**
+     * Filtra eventos que tengan un servicio específico
+     * 
+     * @param servicio Nombre del servicio a buscar
+     * @return Specification para filtrado
+     */
+    public static Specification<Evento> conServicio(String servicio) {
+        return (root, query, criteriaBuilder) -> {
+            if (servicio == null || servicio.trim().isEmpty()) {
+                return criteriaBuilder.conjunction();
+            }
+            
+            String pattern = "%" + servicio.toLowerCase() + "%";
+            return criteriaBuilder.like(
+                criteriaBuilder.lower(root.join("serviciosAdicionales").get("nombreServicio")), 
+                pattern
+            );
+        };
+    }
+
+    /**
+     * Filtra eventos disponibles (no cancelados y con cupo)
+     * 
+     * @param disponible True para eventos disponibles, False para no disponibles
+     * @return Specification para filtrado
+     */
+    public static Specification<Evento> esDisponible(Boolean disponible) {
+        return (root, query, criteriaBuilder) -> {
+            if (disponible == null) {
+                return criteriaBuilder.conjunction();
+            }
+            
+            if (disponible) {
+                // Evento activo y con fecha futura
+                return criteriaBuilder.and(
+                    criteriaBuilder.equal(root.get("status"), EstadoEvento.PUBLISHED),
+                    criteriaBuilder.greaterThanOrEqualTo(root.get("fecha"), LocalDate.now())
+                );
+            } else {
+                // Evento cancelado o con fecha pasada
+                return criteriaBuilder.or(
+                    criteriaBuilder.notEqual(root.get("status"), EstadoEvento.PUBLISHED),
+                    criteriaBuilder.lessThan(root.get("fecha"), LocalDate.now())
+                );
+            }
         };
     }
 }
