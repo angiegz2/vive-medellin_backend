@@ -61,7 +61,7 @@
             <version>2.2.0</version>
         </dependency>
 
-        <!-- Testing (Spring Boot + JUnit 5 + Testcontainers + Mockito) -->
+        <!-- Testing (JUnit 5 + Mockito + Testcontainers) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
@@ -99,11 +99,15 @@
 
     <build>
         <plugins>
-            <!--  Compilador -->
+            <!-- Compilador -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.11.0</version>
                 <configuration>
+                    <source>${java.version}</source>
+                    <target>${java.version}</target>
+                    <encoding>UTF-8</encoding>
                     <annotationProcessorPaths>
                         <path>
                             <groupId>org.projectlombok</groupId>
@@ -113,24 +117,22 @@
                 </configuration>
             </plugin>
 
-            <!-- JaCoCo: cobertura completa -->
+            <!-- JaCoCo: cobertura -->
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
-                <version>0.8.11</version>
+                <version>0.8.12</version>
                 <configuration>
                     <dataFile>target/jacoco.exec</dataFile>
                     <outputDirectory>target/site/jacoco</outputDirectory>
                 </configuration>
                 <executions>
-                    <!-- Inserta el agente antes de ejecutar los tests -->
                     <execution>
                         <id>prepare-agent</id>
                         <goals>
                             <goal>prepare-agent</goal>
                         </goals>
                     </execution>
-                    <!-- Genera el reporte HTML y XML después de los tests -->
                     <execution>
                         <id>report</id>
                         <phase>verify</phase>
@@ -141,7 +143,7 @@
                 </executions>
             </plugin>
 
-            <!-- Surefire: ejecución de tests (JUnit 5 + Java 17) -->
+            <!-- Surefire: ejecución de tests -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
@@ -157,6 +159,7 @@
                 <artifactId>spring-boot-maven-plugin</artifactId>
             </plugin>
 
+            <!-- SonarCloud Maven plugin -->
             <plugin>
                 <groupId>org.sonarsource.scanner.maven</groupId>
                 <artifactId>sonar-maven-plugin</artifactId>
@@ -166,4 +169,5 @@
     </build>
 
 </project>
+
 
