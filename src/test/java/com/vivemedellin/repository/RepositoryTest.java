@@ -21,23 +21,22 @@ class RepositoryTest {
     private EventoRepository eventoRepository;
 
     @Test
-    @DisplayName("Debe guardar y recuperar un Evento con los campos mínimos requeridos")
+    @DisplayName("Debe guardar y recuperar un evento con los campos mínimos requeridos")
     void debeGuardarYRecuperarEvento() {
-        // 🔹 Crear ubicación embebida
+
         Ubicacion ubicacion = new Ubicacion();
         ubicacion.setComunaBarrio("Laureles");
         ubicacion.setDireccionCompleta("Cra 70 #45-10 Medellín");
         ubicacion.setDireccionDetallada("Cerca al estadio Atanasio Girardot");
         ubicacion.setEnlaceMapa("https://maps.google.com/?q=Laureles+Medellin");
 
-        // 🔹 Crear organizador embebido
         Organizador organizador = new Organizador();
         organizador.setNombre("ViveMedellín");
         organizador.setEmail("contacto@vivemedellin.com");
         organizador.setCelular("3001234567");
         organizador.setIdentificacion("900123456");
 
-        // 🔹 Crear evento principal
+
         Evento evento = new Evento();
         evento.setTitulo("Concierto Medellín 2025");
         evento.setDescripcion("Descripción válida de al menos 10 caracteres.");
@@ -48,11 +47,9 @@ class RepositoryTest {
         evento.setUbicacion(ubicacion);
         evento.setOrganizador(organizador);
 
-        // 🔹 Guardar y recuperar el evento
         Evento guardado = eventoRepository.save(evento);
         Evento encontrado = eventoRepository.findById(guardado.getId()).orElse(null);
 
-        // 🔹 Validaciones
         assertThat(encontrado).isNotNull();
         assertThat(encontrado.getId()).isNotNull();
         assertThat(encontrado.getTitulo()).isEqualTo("Concierto Medellín 2025");

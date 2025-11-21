@@ -32,7 +32,7 @@ class ControllerTest {
     void debeRetornarOkCuandoSeListanEventosActivos() throws Exception {
         EventoResponse evento = new EventoResponse();
         evento.setId(1L);
-        evento.setTitulo("Festival de la Cerveza");
+        evento.setTitulo("Festival de la cerveza");
         evento.setDescripcion("Un evento de música y cerveza artesanal");
         evento.setFecha(LocalDate.now().plusDays(5));
         evento.setCategoria("Cultural");
@@ -43,7 +43,7 @@ class ControllerTest {
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath("$[0].titulo").value("Festival de la Cerveza"))
+                .andExpect(jsonPath("$[0].titulo").value("Festival de la cerveza"))
                 .andExpect(jsonPath("$[0].categoria").value("Cultural"));
     }
 
